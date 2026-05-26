@@ -1,6 +1,7 @@
 node_modules/
 out/
 public/voice.wav
+public/voice/
 public/document-pages/
 input/docs/*
 !input/docs/.gitkeep

@@ -2,19 +2,18 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {fileURLToPath} from 'node:url';
 import {createCanvas, DOMMatrix, ImageData, Path2D} from '@napi-rs/canvas';
+import {documentCourseSchema} from '../src/course-schema';
+import {loadProjectEnv, readNumberEnv} from './lib/env';
+import {assertInsideRoot, coursePath, docsDir, documentPagesDir, outDir, rootDir} from './lib/paths';
 
 type PdfJs = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
 
 const execFileAsync = promisify(execFile);
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const docsDir = path.join(rootDir, 'input', 'docs');
-const outDir = path.join(rootDir, 'out');
+loadProjectEnv();
+
 const workDir = path.join(outDir, 'document-work');
-const pagesDir = path.join(rootDir, 'public', 'document-pages');
-const coursePath = path.join(rootDir, 'course.json');
-const pageDurationSeconds = Number(process.env.DOCUMENT_PAGE_SECONDS ?? 6);
+const pageDurationSeconds = readNumberEnv('DOCUMENT_PAGE_SECONDS', 6);
 const supportedExtensions = new Set(['.pdf', '.pptx']);
 
 Object.assign(globalThis, {
@@ -22,13 +21,6 @@ Object.assign(globalThis, {
   ImageData: globalThis.ImageData ?? ImageData,
   Path2D: globalThis.Path2D ?? Path2D,
 });
-
-const assertInsideRoot = (target: string) => {
-  const relative = path.relative(rootDir, target);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error(`Refusing to write outside project directory: ${target}`);
-  }
-};
 
 const findFirstDocument = async () => {
   await fs.mkdir(docsDir, {recursive: true});
@@ -80,11 +72,10 @@ const convertPptxToPdf = async (pptxPath: string) => {
   }
 
   await fs.mkdir(workDir, {recursive: true});
-  await execFileAsync(
-    soffice,
-    ['--headless', '--convert-to', 'pdf', '--outdir', workDir, pptxPath],
-    {windowsHide: true, timeout: 120000},
-  );
+  await execFileAsync(soffice, ['--headless', '--convert-to', 'pdf', '--outdir', workDir, pptxPath], {
+    windowsHide: true,
+    timeout: 120000,
+  });
 
   const expectedPdf = path.join(workDir, `${path.parse(pptxPath).name}.pdf`);
   try {
@@ -124,8 +115,8 @@ const renderPdfPages = async (pdfPath: string) => {
   const pdf = await loadingTask.promise;
   const pageImages: string[] = [];
 
-  await fs.rm(pagesDir, {recursive: true, force: true});
-  await fs.mkdir(pagesDir, {recursive: true});
+  await fs.rm(documentPagesDir, {recursive: true, force: true});
+  await fs.mkdir(documentPagesDir, {recursive: true});
 
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
@@ -138,7 +129,7 @@ const renderPdfPages = async (pdfPath: string) => {
     await page.render({canvas, canvasContext: context, viewport} as never).promise;
 
     const imageName = `page-${String(pageNumber).padStart(3, '0')}.png`;
-    const imagePath = path.join(pagesDir, imageName);
+    const imagePath = path.join(documentPagesDir, imageName);
     await fs.writeFile(imagePath, canvas.toBuffer('image/png'));
     pageImages.push(`document-pages/${imageName}`);
   }
@@ -150,7 +141,7 @@ const renderPdfPages = async (pdfPath: string) => {
 const writeDocumentCourse = async (documentPath: string, pageImages: string[]) => {
   const title = path.parse(documentPath).name;
   const durationSeconds = pageImages.length * pageDurationSeconds;
-  const course = {
+  const course = documentCourseSchema.parse({
     title,
     subtitle: 'Document video',
     mode: 'document',
@@ -165,7 +156,7 @@ const writeDocumentCourse = async (documentPath: string, pageImages: string[]) =
       backgroundImage,
       sourcePage: index + 1,
     })),
-  };
+  });
 
   await fs.writeFile(coursePath, `${JSON.stringify(course, null, 2)}\n`, 'utf8');
 };
@@ -173,7 +164,7 @@ const writeDocumentCourse = async (documentPath: string, pageImages: string[]) =
 assertInsideRoot(docsDir);
 assertInsideRoot(outDir);
 assertInsideRoot(workDir);
-assertInsideRoot(pagesDir);
+assertInsideRoot(documentPagesDir);
 assertInsideRoot(coursePath);
 
 if (!Number.isFinite(pageDurationSeconds) || pageDurationSeconds <= 0) {
@@ -194,5 +185,5 @@ if (pageImages.length === 0) {
 }
 
 await writeDocumentCourse(documentPath, pageImages);
-console.log(`Rendered ${pageImages.length} page image(s) to ${pagesDir}`);
+console.log(`Rendered ${pageImages.length} page image(s) to ${documentPagesDir}`);
 console.log(`course.json updated for document video (${pageDurationSeconds}s per page).`);

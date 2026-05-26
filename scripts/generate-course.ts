@@ -1,71 +1,29 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import dotenv from 'dotenv';
+import type {z} from 'zod';
+import {
+  type Course,
+  courseSchema,
+  defaultCourseFields,
+  maxDurationSeconds,
+  maxSlideCount,
+  minDurationSeconds,
+  minSlideCount,
+} from '../src/course-schema';
+import {DEFAULT_THEME_ID, themes} from '../src/themes';
+import {loadProjectEnv} from './lib/env';
+import {coursePath, outDir, rootDir} from './lib/paths';
 import OpenAI from 'openai';
-import {z} from 'zod';
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-dotenv.config({path: path.join(rootDir, '.env'), override: true});
+loadProjectEnv();
 
-const briefPath = process.argv[2]
-  ? path.resolve(process.cwd(), process.argv[2])
-  : path.join(rootDir, 'input', 'brief.txt');
-const coursePath = path.join(rootDir, 'course.json');
-const outDir = path.join(rootDir, 'out');
 const generatedCoursePath = path.join(outDir, 'course.generated.json');
 const rawCoursePath = path.join(outDir, 'course.raw-model-output.txt');
 const outputTag = 'course_video_json';
 
-const apiKey = process.env.OPENAI_API_KEY;
-const baseURL = process.env.OPENAI_BASE_URL;
-const textModel = process.env.OPENAI_TEXT_MODEL ?? 'gpt-5.4';
-
-if (!apiKey) {
-  throw new Error('OPENAI_API_KEY is missing. Put it in .env before running.');
-}
-
-const slideSchema = z
-  .object({
-    kind: z.enum(['title', 'bullets', 'concept', 'exercise', 'summary']),
-    start: z.number().min(0),
-    end: z.number().min(1),
-    heading: z.string().min(1).max(40),
-    body: z.string().max(110).optional(),
-    bullets: z.array(z.string().min(1).max(36)).min(2).max(4).optional(),
-    code: z.string().max(160).optional(),
-    caption: z.string().min(8).max(120),
-  })
-  .superRefine((slide, ctx) => {
-    if (['bullets', 'exercise', 'summary'].includes(slide.kind) && !slide.bullets) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['bullets'],
-        message: `${slide.kind} slides must include bullets.`,
-      });
-    }
-
-    if (slide.kind === 'concept' && !slide.body && !slide.code) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['body'],
-        message: 'concept slides must include body or code.',
-      });
-    }
-  });
-
-const courseSchema = z.object({
-  title: z.string().min(1).max(40),
-  subtitle: z.string().min(1).max(40),
-  durationSeconds: z.number().int().min(30).max(60),
-  fps: z.literal(30),
-  slides: z.array(slideSchema).min(4).max(6),
-});
-
-type Course = z.infer<typeof courseSchema>;
-
-const normalizeTiming = (course: Course): Course => {
-  const durationSeconds = Math.min(60, Math.max(30, Math.round(course.durationSeconds)));
+export const normalizeTiming = (course: Course): Course => {
+  const durationSeconds = Math.min(maxDurationSeconds, Math.max(minDurationSeconds, Math.round(course.durationSeconds)));
   const slideCount = course.slides.length;
   const segment = durationSeconds / slideCount;
 
@@ -81,7 +39,7 @@ const normalizeTiming = (course: Course): Course => {
   };
 };
 
-const extractJson = (content: string) => {
+export const extractJson = (content: string) => {
   const trimmed = content.trim();
   const xml = trimmed.match(new RegExp(`<${outputTag}>\\s*([\\s\\S]*?)\\s*</${outputTag}>`, 'i'));
   if (xml?.[1]) {
@@ -102,7 +60,15 @@ const extractJson = (content: string) => {
   return trimmed;
 };
 
-const buildSystemPrompt = () => {
+const formatThemeOptions = () =>
+  themes
+    .map(
+      (theme) =>
+        `- ${theme.id}: ${theme.nameZh} / ${theme.label}; ${theme.descriptionZh}; 适合：${theme.bestFor}`,
+    )
+    .join('\n');
+
+export const buildSystemPrompt = () => {
   return `
 <role>
 你是课程视频 JSON 生成器，负责把用户文案转换成 Remotion 模板可用的数据。
@@ -118,7 +84,8 @@ XML 根标签必须是 <${outputTag}>。
 {
   "title": "string, 1-40 chars",
   "subtitle": "string, 1-40 chars",
-  "durationSeconds": "integer, 30-60",
+  "theme": "string, exactly one supported theme id",
+  "durationSeconds": "integer, 30-300",
   "fps": 30,
   "slides": [
     {
@@ -136,9 +103,9 @@ XML 根标签必须是 <${outputTag}>。
 </json_schema>
 
 <hard_rules>
-1. slides 必须是 4-6 页。
+1. slides 必须是 ${minSlideCount}-${maxSlideCount} 页。短视频通常 4-6 页；1-3 分钟通常 7-14 页；3-5 分钟通常 15-24 页。
 2. fps 必须等于 30。
-3. durationSeconds 必须是 30-60 的整数。
+3. durationSeconds 必须是 ${minDurationSeconds}-${maxDurationSeconds} 的整数，最高 5 分钟。
 4. 第一页 kind 必须是 "title"。
 5. 最后一页 kind 必须是 "summary"。
 6. start/end 必须递增，第一段 start 为 0，最后一段 end 等于 durationSeconds。
@@ -148,27 +115,51 @@ XML 根标签必须是 <${outputTag}>。
 10. caption 是配音旁白，不是屏幕字幕堆砌，中文自然讲课风格，每页 1-2 句。
 11. 所有屏幕文字必须短，适合 1920x1080 课程画面显示。
 12. 不要生成图片 URL、视频 URL、CSS、HTML 或 Markdown。
+13. theme 必须从下列合法 theme id 里选择一个，结合题材、受众和语气做选择；不确定时使用 "${DEFAULT_THEME_ID}"。
+14. 如果 user_brief 明确写了时长，例如“60 秒”“3 分钟”“5 分钟”，durationSeconds 必须尽量贴近该时长，但不能超过 ${maxDurationSeconds} 秒。
+15. 如果 user_brief 没有写时长，根据内容复杂度选择 60-120 秒；复杂教程可以扩展到 180-300 秒。
 </hard_rules>
+
+<theme_options>
+${formatThemeOptions()}
+</theme_options>
 
 <output_example>
 <${outputTag}>
 {
   "title": "1天快速学会 Python",
   "subtitle": "零基础入门 Demo",
+  "theme": "${DEFAULT_THEME_ID}",
   "durationSeconds": 42,
   "fps": 30,
   "slides": [
     {
       "kind": "title",
       "start": 0,
-      "end": 8,
+      "end": 10,
       "heading": "1天快速学会 Python",
       "body": "从变量和 print 开始",
       "caption": "今天我们用一个短视频，快速看懂 Python 入门课会学什么。"
     },
     {
+      "kind": "concept",
+      "start": 10,
+      "end": 20,
+      "heading": "变量是什么",
+      "body": "变量就是给数据起名字",
+      "caption": "变量可以理解成一个带名字的盒子，用来保存后面要使用的数据。"
+    },
+    {
+      "kind": "bullets",
+      "start": 20,
+      "end": 32,
+      "heading": "先练三件事",
+      "bullets": ["定义变量", "打印结果", "修改数值"],
+      "caption": "入门阶段先练三件事，定义变量、打印结果，再尝试修改变量的值。"
+    },
+    {
       "kind": "summary",
-      "start": 8,
+      "start": 32,
       "end": 42,
       "heading": "下一步",
       "bullets": ["掌握变量", "练习 print", "学习条件判断"],
@@ -199,7 +190,7 @@ const unwrapPayload = (payload: unknown): unknown => {
   return payload;
 };
 
-const coerceCoursePayload = (payload: unknown): unknown => {
+export const coerceCoursePayload = (payload: unknown): unknown => {
   const unwrapped = unwrapPayload(payload);
   if (!isRecord(unwrapped)) {
     return unwrapped;
@@ -212,6 +203,7 @@ const coerceCoursePayload = (payload: unknown): unknown => {
       : Array.isArray(unwrapped.pages)
         ? unwrapped.pages
         : undefined;
+  const hasTheme = Object.prototype.hasOwnProperty.call(unwrapped, 'theme');
 
   return {
     ...unwrapped,
@@ -222,50 +214,118 @@ const coerceCoursePayload = (payload: unknown): unknown => {
           ? slides[0].heading
           : '课程视频 Demo',
     subtitle: typeof unwrapped.subtitle === 'string' ? unwrapped.subtitle : 'AI 生成课程样片',
-    durationSeconds: typeof unwrapped.durationSeconds === 'number' ? unwrapped.durationSeconds : 58,
-    fps: 30,
+    theme: hasTheme ? unwrapped.theme : defaultCourseFields.theme,
+    durationSeconds:
+      typeof unwrapped.durationSeconds === 'number' ? unwrapped.durationSeconds : defaultCourseFields.durationSeconds,
+    fps: defaultCourseFields.fps,
     slides,
   };
 };
 
-const brief = await fs.readFile(briefPath, 'utf8');
-const openai = new OpenAI({apiKey, baseURL});
+const formatZodError = (error: z.ZodError): string => {
+  return error.issues
+    .map((issue) => {
+      const pathLabel = issue.path.length > 0 ? issue.path.join('.') : '<root>';
+      return `- ${pathLabel}: ${issue.message}`;
+    })
+    .join('\n');
+};
 
-console.log(`Generating course.json from ${briefPath} with ${textModel}...`);
+const parseCoursePayload = (payload: unknown): Course => {
+  const result = courseSchema.safeParse(coerceCoursePayload(payload));
+  if (result.success) {
+    return normalizeTiming(result.data);
+  }
 
-const completion = await openai.chat.completions.create({
-  model: textModel,
-  messages: [
+  throw new Error(`Generated course JSON failed schema validation:\n${formatZodError(result.error)}`);
+};
+
+const requestCourseJson = async (openai: OpenAI, textModel: string, brief: string, repairContext?: string) => {
+  const messages = [
     {
       role: 'system',
       content: buildSystemPrompt(),
     },
     {
       role: 'user',
-      content: `<user_brief>\n${brief}\n</user_brief>`,
+      content: repairContext
+        ? `<user_brief>\n${brief}\n</user_brief>\n\n<repair_request>\n上一次输出不符合 schema。请根据以下错误只重新输出完整 JSON XML，不要解释。\n${repairContext}\n</repair_request>`
+        : `<user_brief>\n${brief}\n</user_brief>`,
     },
-  ],
-} as never);
+  ];
 
-const content = completion.choices[0]?.message?.content;
-if (!content) {
-  throw new Error('The text model did not return any content.');
+  const completion = await openai.chat.completions.create({
+    model: textModel,
+    messages,
+  } as never);
+
+  const content = completion.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error('The text model did not return any content.');
+  }
+
+  return content;
+};
+
+export const main = async () => {
+  const briefPath = process.argv[2]
+    ? path.resolve(process.cwd(), process.argv[2])
+    : path.join(rootDir, 'input', 'brief.txt');
+  const apiKey = process.env.OPENAI_API_KEY;
+  const baseURL = process.env.OPENAI_BASE_URL;
+  const textModel = process.env.OPENAI_TEXT_MODEL;
+
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is missing. Copy .env.example to .env and set it before running.');
+  }
+
+  if (!textModel) {
+    throw new Error('OPENAI_TEXT_MODEL is missing. Set it to a model supported by your OpenAI-compatible endpoint.');
+  }
+
+  const brief = await fs.readFile(briefPath, 'utf8');
+  const openai = new OpenAI({apiKey, baseURL});
+
+  console.log(`Generating course.json from ${briefPath} with ${textModel}...`);
+
+  await fs.mkdir(outDir, {recursive: true});
+
+  let content = await requestCourseJson(openai, textModel, brief);
+  let parsed: unknown;
+  let course: Course;
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    await fs.writeFile(
+      attempt === 1 ? rawCoursePath : path.join(outDir, 'course.raw-model-output.repair.txt'),
+      content,
+      'utf8',
+    );
+
+    try {
+      parsed = JSON.parse(extractJson(content));
+      course = parseCoursePayload(parsed);
+      const serialized = `${JSON.stringify(course, null, 2)}\n`;
+      await fs.writeFile(generatedCoursePath, serialized, 'utf8');
+      await fs.writeFile(coursePath, serialized, 'utf8');
+      console.log(`course.json updated from ${briefPath}`);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt >= 2) {
+        throw new Error(`The text model returned invalid course JSON after repair attempt: ${message}`);
+      }
+
+      console.warn(`Generated course JSON failed validation. Asking model to repair once...\n${message}`);
+      content = await requestCourseJson(openai, textModel, brief, message);
+    }
+  }
+};
+
+const isMainModule = () => {
+  const entry = process.argv[1];
+  return Boolean(entry && path.resolve(entry) === fileURLToPath(import.meta.url));
+};
+
+if (isMainModule()) {
+  await main();
 }
-
-await fs.mkdir(outDir, {recursive: true});
-await fs.writeFile(rawCoursePath, content, 'utf8');
-
-let parsed: unknown;
-try {
-  parsed = JSON.parse(extractJson(content));
-} catch (error) {
-  throw new Error(`The text model returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
-}
-
-const course = normalizeTiming(courseSchema.parse(coerceCoursePayload(parsed)));
-
-const serialized = `${JSON.stringify(course, null, 2)}\n`;
-await fs.writeFile(generatedCoursePath, serialized, 'utf8');
-await fs.writeFile(coursePath, serialized, 'utf8');
-
-console.log(`course.json updated from ${briefPath}`);
