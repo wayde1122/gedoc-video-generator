@@ -4,6 +4,16 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {envPath, hasProjectEnv, loadProjectEnv, requireEnv, validatePositiveNumberEnv} from './lib/env';
 import {defaultVideoOutputPath, docsDir, outDir, resolveFromCwd, rootDir} from './lib/paths';
+import {
+  getGenericApiKey,
+  getGenericBaseUrl,
+  getGenericModel,
+  getGenericSpeed,
+  getGenericTimeoutMs,
+  getGenericVoice,
+  getVoiceSpeed,
+} from './voice/config';
+import {normalizeVoiceProviderKeyword} from './voice/provider-registry';
 
 const execFileAsync = promisify(execFile);
 loadProjectEnv();
@@ -90,10 +100,9 @@ if (runningUnderPnpm || (await commandExists('pnpm', ['--version']))) {
 for (const validation of [
   validatePositiveNumberEnv('OPENAI_REQUEST_TIMEOUT_MS', 20000),
   validatePositiveNumberEnv('DOCUMENT_PAGE_SECONDS', 6),
-  validatePositiveNumberEnv('VOICE_AUDIO_MODEL_RETRIES', 3),
   validatePositiveNumberEnv('VOICE_SLIDE_GAP_SECONDS', 0.35),
-  validatePositiveNumberEnv('DASHSCOPE_TTS_SAMPLE_RATE', 24000),
-  validatePositiveNumberEnv('DASHSCOPE_TTS_TIMEOUT_MS', 120000),
+  validatePositiveNumberEnv('VOICE_SPEED', 1.15),
+  validatePositiveNumberEnv('MODEL_TTS_TIMEOUT_MS', 120000),
 ]) {
   if (validation) {
     error(validation);
@@ -118,41 +127,102 @@ if (process.env.OPENAI_BASE_URL) {
   warn('OPENAI_BASE_URL is empty. The OpenAI SDK will use its default endpoint.');
 }
 
-const voiceProvider = process.env.VOICE_PROVIDER ?? 'auto';
-if (['auto', 'openai-audio', 'dashscope-http'].includes(voiceProvider)) {
-  ok(`VOICE_PROVIDER=${voiceProvider}.`);
-} else {
-  error(`Unsupported VOICE_PROVIDER=${voiceProvider}. Use auto, openai-audio, or dashscope-http.`);
+let voiceProvider: ReturnType<typeof normalizeVoiceProviderKeyword> = 'none';
+try {
+  voiceProvider = normalizeVoiceProviderKeyword(process.env.PROVIDER ?? process.env.VOICE_PROVIDER);
+  ok(`PROVIDER=${voiceProvider}.`);
+} catch (providerError) {
+  error(providerError instanceof Error ? providerError.message : String(providerError));
 }
 
-if (voiceProvider === 'openai-audio' || voiceProvider === 'auto') {
-  if (requireEnv('OPENAI_AUDIO_MODEL')) {
-    ok(`OPENAI_AUDIO_MODEL is set to ${process.env.OPENAI_AUDIO_MODEL}.`);
+if (voiceProvider === 'openai' || voiceProvider === 'openai-audio') {
+  if (getGenericModel(process.env)) {
+    ok(`OpenAI audio model is set to ${getGenericModel(process.env)}.`);
   } else {
-    warn('OPENAI_AUDIO_MODEL is missing. OpenAI audio synthesis will be skipped.');
+    error('MODEL is missing but PROVIDER selects OpenAI audio synthesis.');
+  }
+
+  if (getGenericApiKey(process.env)) {
+    ok('MODE_API_KEY is available for OpenAI audio synthesis.');
+  } else {
+    error('MODE_API_KEY is missing but PROVIDER selects OpenAI audio synthesis.');
+  }
+
+  if (getGenericBaseUrl(process.env)) {
+    ok(`OpenAI audio base URL is set to ${getGenericBaseUrl(process.env)}.`);
+  } else {
+    warn('BASE_URL is missing. Defaulting to https://api.openai.com/v1.');
   }
 }
 
-if (voiceProvider === 'dashscope-http' || voiceProvider === 'auto') {
-  if (requireEnv('DASHSCOPE_API_KEY')) {
-    ok('DASHSCOPE_API_KEY is set.');
+if (voiceProvider !== 'none') {
+  ok(`VOICE_SPEED=${getVoiceSpeed(process.env)}${getGenericSpeed(process.env) ? '' : ' (default)'}.`);
+}
+
+if (voiceProvider === 'dashscope' || voiceProvider === 'dashscope-http') {
+  if (getGenericApiKey(process.env)) {
+    ok('MODE_API_KEY is set.');
   } else {
-    warn('DASHSCOPE_API_KEY is missing. DashScope HTTP TTS will be skipped or fail if selected.');
+    error('MODE_API_KEY is missing but PROVIDER selects DashScope HTTP TTS.');
   }
 
-  if (requireEnv('DASHSCOPE_TTS_MODEL')) {
-    ok(`DASHSCOPE_TTS_MODEL is set to ${process.env.DASHSCOPE_TTS_MODEL}.`);
+  if (getGenericBaseUrl(process.env)) {
+    ok(`DashScope base URL is set to ${getGenericBaseUrl(process.env)}.`);
   } else {
-    warn('DASHSCOPE_TTS_MODEL is missing. Defaulting to cosyvoice-v3-flash.');
+    warn('BASE_URL is missing. Defaulting to https://api.dashscope.com/v1.');
   }
 
-  if (requireEnv('DASHSCOPE_TTS_VOICE')) {
-    ok(`DASHSCOPE_TTS_VOICE is set to ${process.env.DASHSCOPE_TTS_VOICE}.`);
+  if (getGenericModel(process.env)) {
+    ok(`DashScope TTS model is set to ${getGenericModel(process.env)}.`);
   } else {
-    warn('DASHSCOPE_TTS_VOICE is missing. Defaulting to longxiaochun_v3.');
+    warn('MODEL is missing. Defaulting to cosyvoice-v3-flash.');
+  }
+
+  if (getGenericVoice(process.env)) {
+    ok(`DashScope TTS voice is set to ${getGenericVoice(process.env)}.`);
+  } else {
+    warn('MODEL_VOICE is missing. Defaulting to longxiaochun_v3.');
   }
 
   ok('DashScope HTTP TTS uses Node fetch. No Python SDK is required.');
+}
+
+if (voiceProvider === 'xiaomi' || voiceProvider === 'xiaomi-mimo') {
+  if (getGenericApiKey(process.env)) {
+    ok('MODE_API_KEY is set.');
+  } else {
+    error('MODE_API_KEY is missing but PROVIDER selects Xiaomi MiMo TTS.');
+  }
+
+  if (getGenericBaseUrl(process.env)) {
+    ok(`Xiaomi MiMo base URL is set to ${getGenericBaseUrl(process.env)}.`);
+  } else {
+    warn('BASE_URL is missing. Defaulting to https://api.xiaomimimo.com/v1.');
+  }
+
+  if (getGenericModel(process.env)) {
+    ok(`Xiaomi MiMo TTS model is set to ${getGenericModel(process.env)}.`);
+  } else {
+    warn('MODEL is missing. Defaulting to mimo-v2.5-tts.');
+  }
+
+  if (getGenericVoice(process.env)) {
+    ok(`Xiaomi MiMo TTS voice is set to ${getGenericVoice(process.env)}.`);
+  } else {
+    warn('MODEL_VOICE is missing. Defaulting to mimo_default.');
+  }
+
+  if (getGenericTimeoutMs(process.env)) {
+    ok(`Xiaomi MiMo timeout is set to ${getGenericTimeoutMs(process.env)}ms.`);
+  }
+}
+
+if (voiceProvider === 'windows' || voiceProvider === 'windows-speech') {
+  if (process.platform === 'win32') {
+    ok('Windows speech synthesis can run on this platform.');
+  } else {
+    error('PROVIDER selects Windows speech, but this platform is not Windows.');
+  }
 }
 
 if (await hasSupportedDocument()) {

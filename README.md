@@ -116,8 +116,6 @@ input\brief.txt
   ↓
 OpenAI-compatible 文本模型生成 course.json（含可选 theme，支持 30 秒到 5 分钟）
   ↓
-按 slide 生成分段语音
-  ↓
 Remotion 渲染 MP4
 ```
 
@@ -125,6 +123,12 @@ Remotion 渲染 MP4
 
 ```powershell
 pnpm run demo:current
+```
+
+如需生成带旁白的视频，先在 `.env` 中明确选择一个 `PROVIDER`，再运行：
+
+```powershell
+pnpm run demo:voice
 ```
 
 如果想控制视频长度，直接在 `input\brief.txt` 里写明目标时长，例如：
@@ -157,25 +161,19 @@ OPENAI_API_KEY=your_key_here
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_TEXT_MODEL=your_text_model
 
-# 配音可选
-VOICE_PROVIDER=auto
-OPENAI_AUDIO_MODEL=your_audio_model
-OPENAI_AUDIO_VOICE=alloy
-VOICE_REQUIRE_AUDIO_MODEL=false
-VOICE_AUDIO_MODEL_RETRIES=3
+# 配音可选；PROVIDER 必须明确指定，不支持 auto
+PROVIDER=none
+MODE_API_KEY=your_tts_key_here
+MODEL=your_tts_model
+MODEL_VOICE=your_voice
+MODEL_TTS_TIMEOUT_MS=120000
+BASE_URL=https://api.openai.com/v1
+VOICE_SPEED=1.15
 VOICE_SLIDE_GAP_SECONDS=0.35
-OPENAI_REQUEST_TIMEOUT_MS=20000
-
-# DashScope 仅在使用 dashscope-http 或 auto fallback 时需要
-DASHSCOPE_API_KEY=your_dashscope_key_here
-DASHSCOPE_TTS_MODEL=cosyvoice-v3-flash
-DASHSCOPE_TTS_VOICE=longxiaochun_v3
-DASHSCOPE_TTS_SAMPLE_RATE=24000
-DASHSCOPE_TTS_TIMEOUT_MS=120000
 
 # 可选输出设置
 DOCUMENT_PAGE_SECONDS=6
-VIDEO_OUTPUT=out/doc-video-generator.mp4
+VIDEO_OUTPUT=
 CLEAN_AFTER_RENDER=true
 KEEP_ARTIFACTS=false
 STRICT_THEME=false
@@ -185,11 +183,15 @@ STRICT_THEME=false
 
 - 本项目使用 `openai` SDK。`OPENAI_BASE_URL` 可以留空使用 SDK 默认端点，也可以填 OpenAI 官方 `https://api.openai.com/v1`，或填其他 OpenAI-compatible 服务商提供的 `/v1` endpoint。
 - `OPENAI_TEXT_MODEL` 用于把文案生成 `course.json`，必须与 `OPENAI_BASE_URL` 对应服务商实际支持的模型名一致。
-- `OPENAI_AUDIO_MODEL` 用于在线语音生成；如果你的服务商不支持音频模型，可留空并使用 DashScope HTTP TTS 或 Windows 本地中文语音兜底。
-- `VOICE_PROVIDER` 可选 `openai-audio`、`dashscope-http` 或 `auto`。
-- `dashscope-http` 使用 DashScope HTTP `SpeechSynthesizer`，默认模型为 `cosyvoice-v3-flash`，默认 voice 为 `longxiaochun_v3`。
-- `auto` 会先尝试 OpenAI 音频模型，失败后尝试 DashScope HTTP TTS，再失败会在 Windows 上使用本地中文语音兜底。
-- `VIDEO_OUTPUT` 可选，用于覆盖 `pnpm run render` 的 MP4 输出路径；未设置时默认写入 `out\doc-video-generator.mp4`。
+- `PROVIDER` 可选 `none`、`openai`、`dashscope`、`xiaomi` 或 `windows`；不支持 `auto`，必须明确选择供应商。
+- `MODE_API_KEY`、`MODEL`、`MODEL_VOICE`、`MODEL_TTS_TIMEOUT_MS`、`BASE_URL`、`VOICE_SPEED` 是语音生成的统一配置。
+- `openai` 常用 `BASE_URL=https://api.openai.com/v1`，`MODEL` 填音频模型，`MODEL_VOICE` 填音色名。
+- `dashscope` 常用 `BASE_URL=https://api.dashscope.com/v1`，`MODEL=cosyvoice-v3-flash`，`MODEL_VOICE=longxiaochun_v3`。
+- `xiaomi` 常用 `BASE_URL=https://api.xiaomimimo.com/v1`，`MODEL=mimo-v2.5-tts`，`MODEL_VOICE=mimo_default`；也可以设置 `MODEL_VOICE=auto`，按课程主题内容选择一个全局音色。
+- `windows` 仅在 Windows 上使用本地 zh-CN 系统语音。
+- `VOICE_SPEED` 控制旁白语速，默认 `1.15`，数值越大越快。调完后运行 `pnpm run voice -- --force` 重新生成已存在的分段音频。
+- `VIDEO_OUTPUT` 可选，用于覆盖 `pnpm run render` 的 MP4 输出路径；未设置时默认按 `course.json` 的标题生成，例如 `out\AI日报.mp4`。
+- `CLEAN_AFTER_RENDER=true` 会在渲染后清理分段音频、raw 模型输出和临时文本等中间产物，只保留最终 MP4 与当前 `course.json`。如果需要调试中间产物，可设置 `KEEP_ARTIFACTS=true`。
 - 修改配置后可运行 `pnpm run env:check` 查看缺失项、外部依赖和输出目录状态。
 
 ## 主题
@@ -267,7 +269,7 @@ public\voice\slide-002.wav
 - 下一页会从“当前页语音真实结束时间 + `VOICE_SLIDE_GAP_SECONDS` 留白”之后开始，避免旁白还没结束就翻页。
 - `VOICE_SLIDE_GAP_SECONDS` 默认 `0.35` 秒，可在 `.env` 中调整。
 - 每个课程 slide 都必须有 `caption` 并生成对应 `audioSrc`；缺失时 `pnpm run voice` 会直接报错。
-- 只有所有 slide 都没有 `audioSrc` 时，渲染才 fallback 到旧的 `public\voice.wav`。
+- 如果所有 slide 都没有 `audioSrc`，渲染会生成无旁白视频，便于新克隆仓库直接预览示例课程。
 - 已存在的分段音频会跳过，不重复生成，但仍会读取音频时长并同步 `course.json`。
 
 ## 常用命令
@@ -276,8 +278,10 @@ public\voice\slide-002.wav
 pnpm run env:check   # 检查 .env、模型配置、外部依赖和输出目录
 pnpm run doc:demo    # PDF/PPTX 转视频
 pnpm run doc:prepare # 只把文档转图片并生成 course.json
-pnpm run demo        # 文案生成课程视频
-pnpm run demo:current# 用当前 course.json 重新渲染
+pnpm run demo        # 文案生成无旁白课程视频
+pnpm run demo:voice  # 文案生成带分段配音课程视频
+pnpm run demo:current# 用当前 course.json 重新渲染无旁白视频
+pnpm run demo:current:voice # 用当前 course.json 生成/复用配音后渲染
 pnpm run render      # 只渲染当前 course.json
 pnpm run voice       # 按 slide 生成分段配音
 pnpm run typecheck   # TypeScript 类型检查
@@ -292,7 +296,6 @@ input\brief.txt        # 文案生成课程视频的输入
 input\docs\            # PDF/PPTX 转视频的输入目录
 public\document-pages\ # 文档页转出来的图片
 public\voice\          # 分段配音
-public\voice.wav       # 旧版整段配音 fallback
 course.json            # 当前要渲染的视频时间轴
 scripts\               # 文案生成、语音生成、文档准备脚本
 src\                   # Remotion 视频组件

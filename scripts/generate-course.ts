@@ -254,14 +254,17 @@ const requestCourseJson = async (openai: OpenAI, textModel: string, brief: strin
     },
   ];
 
-  const completion = await openai.chat.completions.create({
+  const completionResponse = await openai.chat.completions.create({
     model: textModel,
     messages,
   } as never);
+  const completion = (
+    typeof completionResponse === 'string' ? JSON.parse(completionResponse) : completionResponse
+  ) as {choices?: Array<{message?: {content?: string | null}}>} & Record<string, unknown>;
 
-  const content = completion.choices[0]?.message?.content;
+  const content = completion.choices?.[0]?.message?.content;
   if (!content) {
-    throw new Error('The text model did not return any content.');
+    throw new Error(`The text model did not return any content. Raw response: ${JSON.stringify(completion).slice(0, 1000)}`);
   }
 
   return content;

@@ -13,6 +13,17 @@ export const publicVoicePath = path.join(publicDir, 'voice.wav');
 export const documentPagesDir = path.join(publicDir, 'document-pages');
 export const defaultVideoOutputPath = path.join(outDir, 'doc-video-generator.mp4');
 
+export const sanitizeFileName = (value: string) => {
+  const sanitized = value
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^\.+/, '')
+    .trim();
+
+  return sanitized || 'doc-video-generator';
+};
+
 export const assertInsideRoot = (target: string) => {
   const resolvedTarget = path.resolve(target);
   const relative = path.relative(rootDir, resolvedTarget);

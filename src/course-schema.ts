@@ -39,6 +39,51 @@ export const generatedSlideSchema = z
     }
   });
 
+const timelineToleranceSeconds = 1 / 30;
+
+const addTimelineIssues = (
+  course: {durationSeconds: number; slides: Array<{start: number; end: number}>},
+  ctx: z.RefinementCtx,
+) => {
+  const nearlyEqual = (left: number, right: number) => Math.abs(left - right) <= timelineToleranceSeconds;
+
+  course.slides.forEach((slide, index) => {
+    if (slide.end <= slide.start) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['slides', index, 'end'],
+        message: 'Slide end must be greater than slide start.',
+      });
+    }
+
+    if (index === 0 && !nearlyEqual(slide.start, 0)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['slides', index, 'start'],
+        message: 'The first slide must start at 0.',
+      });
+    }
+
+    const previousSlide = course.slides[index - 1];
+    if (previousSlide && !nearlyEqual(slide.start, previousSlide.end)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['slides', index, 'start'],
+        message: `Slide ${index + 1} must start when slide ${index} ends.`,
+      });
+    }
+  });
+
+  const lastSlide = course.slides[course.slides.length - 1];
+  if (lastSlide && !nearlyEqual(lastSlide.end, course.durationSeconds)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['durationSeconds'],
+      message: 'Course durationSeconds must match the final slide end.',
+    });
+  }
+};
+
 export const documentSlideSchema = z.object({
   kind: z.literal(documentSlideKind),
   start: z.number().min(0),
@@ -75,16 +120,20 @@ export const courseSchema = z
         message: 'The last slide must have kind "summary".',
       });
     }
+
+    addTimelineIssues(course, ctx);
   });
 
-export const documentCourseSchema = z.object({
-  title: z.string().min(1),
-  subtitle: z.string().optional(),
-  mode: z.literal('document'),
-  durationSeconds: z.number().positive(),
-  fps: z.literal(30),
-  slides: z.array(documentSlideSchema).min(1),
-});
+export const documentCourseSchema = z
+  .object({
+    title: z.string().min(1),
+    subtitle: z.string().optional(),
+    mode: z.literal('document'),
+    durationSeconds: z.number().positive(),
+    fps: z.literal(30),
+    slides: z.array(documentSlideSchema).min(1),
+  })
+  .superRefine(addTimelineIssues);
 
 export const renderCourseSchema = z.union([courseSchema, documentCourseSchema]);
 

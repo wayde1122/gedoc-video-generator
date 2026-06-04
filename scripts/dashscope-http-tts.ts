@@ -2,14 +2,24 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {loadProjectEnv, readNumberEnv} from './lib/env';
+import {
+  getGenericApiKey,
+  getGenericBaseUrl,
+  getGenericModel,
+  getGenericTimeoutMs,
+  getGenericVoice,
+  getVoiceSpeed,
+} from './voice/config';
 
 export type DashScopeHttpTtsOptions = {
   apiKey: string;
   text: string;
   model: string;
   voice: string;
+  baseUrl?: string;
   format?: 'wav' | 'mp3' | 'pcm';
   sampleRate?: number;
+  speechRate?: number;
   timeoutMs?: number;
 };
 
@@ -24,7 +34,20 @@ type DashScopeHttpResponse = {
   request_id?: string;
 };
 
-const endpoint = 'https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer';
+const defaultEndpoint = 'https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer';
+
+const resolveEndpoint = (baseUrl: string | undefined) => {
+  if (!baseUrl) {
+    return defaultEndpoint;
+  }
+
+  const trimmed = baseUrl.replace(/\/$/, '');
+  if (trimmed.endsWith('/services/audio/tts/SpeechSynthesizer')) {
+    return trimmed;
+  }
+
+  return `${trimmed}/services/audio/tts/SpeechSynthesizer`;
+};
 
 const parseArgs = (argv: string[]) => {
   const values = new Map<string, string>();
@@ -70,13 +93,15 @@ export const synthesizeDashScopeHttpTts = async ({
   text,
   model,
   voice,
+  baseUrl,
   format = 'wav',
   sampleRate = 24000,
+  speechRate,
   timeoutMs = 120000,
 }: DashScopeHttpTtsOptions): Promise<Buffer> => {
   const trimmedText = text.trim();
   if (!apiKey) {
-    throw new Error('DASHSCOPE_API_KEY is missing.');
+    throw new Error('MODE_API_KEY is missing.');
   }
 
   if (!trimmedText) {
@@ -84,15 +109,15 @@ export const synthesizeDashScopeHttpTts = async ({
   }
 
   if (!model) {
-    throw new Error('DASHSCOPE_TTS_MODEL is missing.');
+    throw new Error('MODEL is missing.');
   }
 
   if (!voice) {
-    throw new Error('DASHSCOPE_TTS_VOICE is missing.');
+    throw new Error('MODEL_VOICE is missing.');
   }
 
   const response = await fetchWithTimeout(
-    endpoint,
+    resolveEndpoint(baseUrl),
     {
       method: 'POST',
       headers: {
@@ -106,6 +131,7 @@ export const synthesizeDashScopeHttpTts = async ({
           voice,
           format,
           sample_rate: sampleRate,
+          ...(speechRate === undefined ? {} : {speech_rate: Math.round((speechRate - 1) * 100)}),
         },
       }),
     },
@@ -153,11 +179,13 @@ if (isMainModule()) {
   const args = parseArgs(process.argv.slice(2));
   const textFile = args.get('text-file');
   const output = args.get('output');
-  const model = args.get('model') ?? process.env.DASHSCOPE_TTS_MODEL ?? 'cosyvoice-v3-flash';
-  const voice = args.get('voice') ?? process.env.DASHSCOPE_TTS_VOICE ?? 'longxiaochun_v3';
+  const baseUrl = args.get('base-url') ?? getGenericBaseUrl(process.env);
+  const model = args.get('model') ?? getGenericModel(process.env) ?? 'cosyvoice-v3-flash';
+  const voice = args.get('voice') ?? getGenericVoice(process.env) ?? 'longxiaochun_v3';
   const format = (args.get('format') ?? 'wav') as DashScopeHttpTtsOptions['format'];
-  const sampleRate = Number(args.get('sample-rate') ?? process.env.DASHSCOPE_TTS_SAMPLE_RATE ?? 24000);
-  const timeoutMs = readNumberEnv('DASHSCOPE_TTS_TIMEOUT_MS', 120000);
+  const sampleRate = Number(args.get('sample-rate') ?? 24000);
+  const speechRate = Number(args.get('speed') ?? getVoiceSpeed(process.env));
+  const timeoutMs = Number(getGenericTimeoutMs(process.env) ?? readNumberEnv('MODEL_TTS_TIMEOUT_MS', 120000));
 
   if (!textFile) {
     throw new Error('--text-file is required.');
@@ -168,12 +196,14 @@ if (isMainModule()) {
   }
 
   const audio = await synthesizeDashScopeHttpTts({
-    apiKey: process.env.DASHSCOPE_API_KEY ?? '',
+    apiKey: getGenericApiKey(process.env) ?? '',
     text: await fs.readFile(textFile, 'utf8'),
     model,
     voice,
+    baseUrl,
     format,
     sampleRate,
+    speechRate,
     timeoutMs,
   });
 

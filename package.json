@@ -9,14 +9,17 @@
     "voice": "tsx scripts/generate-voice.ts",
     "render": "tsx scripts/render-video.ts",
     "clean": "tsx scripts/cleanup-artifacts.ts",
-    "demo": "pnpm run course && pnpm run voice -- --force && pnpm run render",
-    "demo:current": "pnpm run voice && pnpm run render",
+    "demo": "pnpm run course && pnpm run render",
+    "demo:voice": "pnpm run course && pnpm run voice -- --force && pnpm run render",
+    "demo:current": "pnpm run render",
+    "demo:current:voice": "pnpm run voice && pnpm run render",
     "studio": "remotion studio src/index.tsx",
     "env:check": "tsx scripts/check-env.ts",
     "typecheck": "tsc --noEmit",
     "check": "pnpm run typecheck && pnpm run test",
-    "test": "pnpm run test:themes",
-    "test:themes": "tsx tests/theme-migration.test.ts"
+    "test": "pnpm run test:themes && pnpm run test:voice-providers",
+    "test:themes": "tsx tests/theme-migration.test.ts",
+    "test:voice-providers": "tsx tests/voice-provider-registry.test.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.0",

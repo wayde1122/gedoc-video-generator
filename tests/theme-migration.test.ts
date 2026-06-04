@@ -6,7 +6,7 @@ import {
   buildSystemPrompt,
   coerceCoursePayload,
 } from '../scripts/generate-course';
-import {courseSchema} from '../src/course-schema';
+import {courseSchema, documentCourseSchema} from '../src/course-schema';
 import {
   DEFAULT_THEME_ID,
   GARDEN_THEME_IDS,
@@ -137,7 +137,12 @@ check('course schema accepts every garden id and rejects an unknown id', () => {
 });
 
 check('course schema supports requested durations up to five minutes', () => {
-  assert.equal(courseSchema.parse(makeCourse({durationSeconds: 300})).durationSeconds, 300);
+  const longSlides = baseSlides.map((slide, index) => ({
+    ...slide,
+    start: index * 75,
+    end: (index + 1) * 75,
+  }));
+  assert.equal(courseSchema.parse(makeCourse({durationSeconds: 300, slides: longSlides})).durationSeconds, 300);
   assert.equal(courseSchema.safeParse(makeCourse({durationSeconds: 301})).success, false);
 });
 
@@ -167,6 +172,65 @@ check('course schema enforces title opener and summary ending', () => {
         ],
       }),
     ).success,
+    false,
+  );
+});
+
+check('course schema enforces a continuous timeline ending at durationSeconds', () => {
+  assert.equal(courseSchema.safeParse(makeCourse({slides: [{...baseSlides[0], start: 1}, ...baseSlides.slice(1)]})).success, false);
+  assert.equal(
+    courseSchema.safeParse(
+      makeCourse({
+        slides: [baseSlides[0], {...baseSlides[1], start: 10}, baseSlides[2], baseSlides[3]],
+      }),
+    ).success,
+    false,
+  );
+  assert.equal(
+    courseSchema.safeParse(
+      makeCourse({
+        durationSeconds: 40,
+      }),
+    ).success,
+    false,
+  );
+});
+
+check('document course schema enforces the same timeline rules', () => {
+  const documentCourse = {
+    title: '示例文档',
+    subtitle: 'Document video',
+    mode: 'document',
+    durationSeconds: 12,
+    fps: 30,
+    slides: [
+      {
+        kind: 'document',
+        start: 0,
+        end: 6,
+        heading: 'Page 1',
+        caption: '',
+        backgroundImage: 'document-pages/page-001.png',
+        sourcePage: 1,
+      },
+      {
+        kind: 'document',
+        start: 6,
+        end: 12,
+        heading: 'Page 2',
+        caption: '',
+        backgroundImage: 'document-pages/page-002.png',
+        sourcePage: 2,
+      },
+    ],
+  };
+
+  assert.equal(documentCourseSchema.safeParse(documentCourse).success, true);
+  assert.equal(
+    documentCourseSchema.safeParse({
+      ...documentCourse,
+      slides: [documentCourse.slides[0], {...documentCourse.slides[1], start: 7}],
+    }).success,
     false,
   );
 });
