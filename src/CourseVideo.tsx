@@ -1,6 +1,7 @@
 import React from 'react';
 import {AbsoluteFill, useCurrentFrame, useVideoConfig} from 'remotion';
 import {videoCourse} from './course-data';
+import {VideoBackground} from './VideoBackground';
 import {DocumentSlideView, SegmentedAudio, SlideView} from './VideoSlideViews';
 import {createVideoStyles} from './video-styles';
 import {getActiveSlide, isDocumentSlide} from './video-utils';
@@ -36,8 +37,13 @@ export const CourseVideo = () => {
         <DocumentSlideView key={activeSlide.start} slide={activeSlide} styles={styles} />
       ) : (
         <>
-          <div style={styles.backgroundPattern} />
-          <div style={styles.backgroundAccent} />
+          <VideoBackground
+            theme={theme}
+            frame={frame}
+            fps={fps}
+            patternStyle={styles.backgroundPattern}
+            accentStyle={styles.backgroundAccent}
+          />
           <div style={styles.topBar}>
             <div style={styles.courseName}>{videoCourse.title}</div>
           </div>

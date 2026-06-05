@@ -136,6 +136,60 @@ check('course schema accepts every garden id and rejects an unknown id', () => {
   assert.equal(courseSchema.safeParse(makeCourse({theme: 'not-a-real-theme'})).success, false);
 });
 
+check('theme registry resolves lightweight background layers for every theme', () => {
+  const validTextures = new Set(['none', 'paper', 'grain', 'scanline', 'grid', 'dots']);
+  const validGeometries = new Set(['none', 'blocks', 'rings', 'waves', 'blueprint', 'zine']);
+  const validMotions = new Set(['none', 'subtle', 'cinematic', 'energetic']);
+  const explicitBackgroundThemeIds = [
+    'midnight-press',
+    'warm-keynote',
+    'newsroom',
+    'bauhaus-bold',
+    'paper-press',
+    'blueprint',
+    'bold-signal',
+    'chalk-garden',
+    'creative-voltage',
+    'dark-botanical',
+    'dune',
+    'electric-studio',
+    'forest-ink',
+    'indigo-porcelain',
+    'kraft-paper',
+    'monochrome-print',
+    'neon-cyber',
+    'pastel-dream',
+    'split-canvas',
+    'sunset-zine',
+    'swiss-ikb',
+    'terminal-green',
+    'vintage-editorial',
+  ] as const;
+
+  for (const theme of themes) {
+    assert.equal(theme.backgroundLayers.base, theme.background);
+    assert.equal(theme.backgroundLayers.vignette, theme.vignette);
+    assert.ok(validTextures.has(theme.backgroundLayers.texture), `${theme.id} should resolve a valid texture`);
+    assert.ok(validGeometries.has(theme.backgroundLayers.geometry), `${theme.id} should resolve a valid geometry`);
+    assert.ok(validMotions.has(theme.backgroundLayers.motion), `${theme.id} should resolve a valid motion`);
+    assert.ok(theme.backgroundLayers.glow.intensity >= 0, `${theme.id} glow intensity should be non-negative`);
+    assert.ok(theme.backgroundLayers.glow.scale > 0, `${theme.id} glow scale should be positive`);
+    assert.ok(theme.backgroundLayers.glow.speed >= 0, `${theme.id} glow speed should be non-negative`);
+  }
+
+  const themeById = new Map(themes.map((theme) => [theme.id, theme]));
+  assert.deepEqual(
+    explicitBackgroundThemeIds.map((themeId) => themeById.get(themeId)?.id),
+    expectedGardenThemeIds,
+  );
+  assert.equal(themeById.get('warm-keynote')?.backgroundLayers.geometry, 'blocks');
+  assert.equal(themeById.get('blueprint')?.backgroundLayers.texture, 'grid');
+  assert.equal(themeById.get('neon-cyber')?.backgroundLayers.motion, 'cinematic');
+  assert.equal(themeById.get('creative-voltage')?.backgroundLayers.motion, 'energetic');
+  assert.equal(themeById.get('paper-press')?.backgroundLayers.geometry, 'zine');
+  assert.equal(themeById.get('dark-botanical')?.backgroundLayers.geometry, 'waves');
+});
+
 check('course schema supports requested durations up to five minutes', () => {
   const longSlides = baseSlides.map((slide, index) => ({
     ...slide,

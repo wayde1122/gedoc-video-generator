@@ -3,13 +3,12 @@
 `doc-video-generator` 是一个基于 Remotion 的本地视频生成项目，支持两种主要模式：
 
 1. **PDF/PPTX 转视频**：把文档每一页转成图片，直接作为视频画面。
-2. **文案生成课程视频**：把一段课程文案交给大语言模型生成 `course.json`，再配音并渲染成视频。
-3. **主题化课程视频**：课程模式支持 23 套 garden-only 本地 Remotion 主题，并按 slide 生成分段配音。
+2. **文案生成课程视频**：把课程文案交给大语言模型生成 `course.json`，可选分段配音，再渲染成视频。课程模式支持 23 套 garden-only 本地 Remotion 主题，并按 slide 生成分段配音。
 
-最终视频默认输出到项目内：
+未设置 `VIDEO_OUTPUT` 时，`pnpm run render` 会按 `course.json` 的 `title` 生成输出文件，例如：
 
 ```text
-out\doc-video-generator.mp4
+out\国内热点新闻速览.mp4
 ```
 
 也可以用环境变量覆盖输出位置（支持相对路径或绝对路径）：
@@ -71,7 +70,8 @@ Remotion 渲染 MP4
 
 规则：
 
-- 每页默认停留 6 秒。
+- 每页默认停留 6 秒；可通过 `DOCUMENT_PAGE_SECONDS` 调整。
+- 渲染输出默认使用文档文件名，例如 `input\docs\季度汇报.pdf` → `out\季度汇报.mp4`。
 - 页面会完整显示，不裁切。
 - `input\docs\` 里有多个文件时，只处理按文件名排序后的第一个 PDF/PPTX。
 - PDF 可以直接处理。
@@ -103,20 +103,33 @@ PPTX conversion requires LibreOffice
 input\brief.txt
 ```
 
-然后运行：
+### 一键命令
 
-```powershell
-pnpm run demo
-```
+| 目标 | 命令 |
+|---|---|
+| 无旁白预览（默认） | `pnpm run demo` |
+| 带分段旁白 | `pnpm run demo:voice` |
+| 只重渲染当前 `course.json` | `pnpm run demo:current` |
+| 只补配音并重渲染 | `pnpm run demo:current:voice` |
 
-流程：
+`demo:voice` 会在生成课程后强制重建分段音频（`voice -- --force`）；`demo:current:voice` 会复用已有分段音频，仅缺失时生成。
+
+### 分步命令
 
 ```text
 input\brief.txt
   ↓
-OpenAI-compatible 文本模型生成 course.json（含可选 theme，支持 30 秒到 5 分钟）
+pnpm run course          # OpenAI-compatible 文本模型生成 course.json（含可选 theme，30 秒到 5 分钟）
   ↓
-Remotion 渲染 MP4
+pnpm run voice           # 可选；PROVIDER≠none 时按 slide 生成分段配音
+  ↓
+pnpm run render          # Remotion 渲染 MP4
+```
+
+只生成 `course.json`，不渲染：
+
+```powershell
+pnpm run course
 ```
 
 只用当前 `course.json` 重新渲染，不重新调用大语言模型：
@@ -125,7 +138,7 @@ Remotion 渲染 MP4
 pnpm run demo:current
 ```
 
-如需生成带旁白的视频，先在 `.env` 中明确选择一个 `PROVIDER`，再运行：
+如需生成带旁白的视频，先在 `.env` 中把 `PROVIDER` 设为 `openai`、`dashscope`、`xiaomi` 或 `windows`（不支持 `auto`），再运行：
 
 ```powershell
 pnpm run demo:voice
@@ -183,7 +196,7 @@ STRICT_THEME=false
 
 - 本项目使用 `openai` SDK。`OPENAI_BASE_URL` 可以留空使用 SDK 默认端点，也可以填 OpenAI 官方 `https://api.openai.com/v1`，或填其他 OpenAI-compatible 服务商提供的 `/v1` endpoint。
 - `OPENAI_TEXT_MODEL` 用于把文案生成 `course.json`，必须与 `OPENAI_BASE_URL` 对应服务商实际支持的模型名一致。
-- `PROVIDER` 可选 `none`、`openai`、`dashscope`、`xiaomi` 或 `windows`；不支持 `auto`，必须明确选择供应商。
+- `PROVIDER` 可选 `none`、`openai`、`dashscope`、`xiaomi` 或 `windows`；不支持 `auto`，必须明确选择供应商。也可用旧名 `VOICE_PROVIDER`，以及 `openai-audio`、`dashscope-http`、`xiaomi-mimo`、`windows-speech` 等同义写法。
 - `MODE_API_KEY`、`MODEL`、`MODEL_VOICE`、`MODEL_TTS_TIMEOUT_MS`、`BASE_URL`、`VOICE_SPEED` 是语音生成的统一配置。
 - `openai` 常用 `BASE_URL=https://api.openai.com/v1`，`MODEL` 填音频模型，`MODEL_VOICE` 填音色名。
 - `dashscope` 常用 `BASE_URL=https://api.dashscope.com/v1`，`MODEL=cosyvoice-v3-flash`，`MODEL_VOICE=longxiaochun_v3`。
@@ -265,6 +278,7 @@ public\voice\slide-002.wav
 
 规则：
 
+- `PROVIDER=none` 时，`pnpm run voice` 会跳过生成；文档模式也会自动跳过。
 - `pnpm run voice` 会在每段语音生成或复用后读取真实 WAV 时长，并重写每个 slide 的 `start/end`。
 - 下一页会从“当前页语音真实结束时间 + `VOICE_SLIDE_GAP_SECONDS` 留白”之后开始，避免旁白还没结束就翻页。
 - `VOICE_SLIDE_GAP_SECONDS` 默认 `0.35` 秒，可在 `.env` 中调整。
@@ -275,28 +289,35 @@ public\voice\slide-002.wav
 ## 常用命令
 
 ```powershell
-pnpm run env:check   # 检查 .env、模型配置、外部依赖和输出目录
-pnpm run doc:demo    # PDF/PPTX 转视频
-pnpm run doc:prepare # 只把文档转图片并生成 course.json
-pnpm run demo        # 文案生成无旁白课程视频
-pnpm run demo:voice  # 文案生成带分段配音课程视频
-pnpm run demo:current# 用当前 course.json 重新渲染无旁白视频
-pnpm run demo:current:voice # 用当前 course.json 生成/复用配音后渲染
-pnpm run render      # 只渲染当前 course.json
-pnpm run voice       # 按 slide 生成分段配音
-pnpm run typecheck   # TypeScript 类型检查
-pnpm run check       # 类型检查 + 测试
-pnpm run studio      # 打开 Remotion Studio
+pnpm run env:check          # 检查 .env、模型配置、外部依赖和输出目录
+pnpm run doc:demo           # PDF/PPTX 转视频
+pnpm run doc:prepare        # 只把文档转图片并生成 course.json
+pnpm run course             # 从 input\brief.txt 生成 course.json
+pnpm run demo               # course + render（无旁白）
+pnpm run demo:voice         # course + voice --force + render（带旁白）
+pnpm run demo:current       # 用当前 course.json 重新渲染（无旁白）
+pnpm run demo:current:voice # voice + render（复用或补全分段配音）
+pnpm run render             # 只渲染当前 course.json
+pnpm run voice              # 按 slide 生成分段配音（PROVIDER=none 时跳过）
+pnpm run clean              # 手动清理中间产物（渲染成功时也会自动清理）
+pnpm run typecheck          # TypeScript 类型检查
+pnpm run check              # 类型检查 + 主题与配音 provider 测试
+pnpm run studio             # 打开 Remotion Studio
 ```
 
 ## 目录说明
 
 ```text
-input\brief.txt        # 文案生成课程视频的输入
-input\docs\            # PDF/PPTX 转视频的输入目录
-public\document-pages\ # 文档页转出来的图片
-public\voice\          # 分段配音
-course.json            # 当前要渲染的视频时间轴
-scripts\               # 文案生成、语音生成、文档准备脚本
-src\                   # Remotion 视频组件
+input\brief.txt              # 文案生成课程视频的输入
+input\docs\                  # PDF/PPTX 转视频的输入目录
+public\document-pages\       # 文档页转出来的图片
+public\voice\                # 分段配音（slide-001.wav 等）
+course.json                  # 当前要渲染的视频时间轴
+out\                         # 渲染输出与中间产物（默认保留 *.mp4 与 course.json）
+out\course.generated.json    # 最近一次 course 生成的规范化结果
+out\course.raw-model-output.txt
+scripts\                     # 文案生成、语音生成、文档准备脚本
+scripts\voice\               # 配音 provider 注册与实现
+src\                         # Remotion 视频组件与主题
+tests\                       # 主题迁移与 voice provider 测试
 ```

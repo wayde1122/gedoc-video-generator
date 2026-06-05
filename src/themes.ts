@@ -41,8 +41,39 @@ export type ThemePattern =
   | 'terminal'
   | 'zine';
 
-export type Theme = {
-  id: ThemeId;
+export const themeBackgroundTextures = ['none', 'paper', 'grain', 'scanline', 'grid', 'dots'] as const;
+export const themeBackgroundGeometries = ['none', 'blocks', 'rings', 'waves', 'blueprint', 'zine'] as const;
+export const themeBackgroundMotions = ['none', 'subtle', 'cinematic', 'energetic'] as const;
+
+export type ThemeBackgroundTexture = (typeof themeBackgroundTextures)[number];
+export type ThemeBackgroundGeometry = (typeof themeBackgroundGeometries)[number];
+export type ThemeBackgroundMotion = (typeof themeBackgroundMotions)[number];
+
+export type ThemeBackgroundGlow = {
+  intensity: number;
+  scale: number;
+  speed: number;
+};
+
+export type ThemeBackground = {
+  base?: string;
+  vignette?: string;
+  texture?: ThemeBackgroundTexture;
+  glow?: Partial<ThemeBackgroundGlow>;
+  geometry?: ThemeBackgroundGeometry;
+  motion?: ThemeBackgroundMotion;
+};
+
+export type ResolvedThemeBackground = {
+  base: string;
+  vignette: string;
+  texture: ThemeBackgroundTexture;
+  glow: ThemeBackgroundGlow;
+  geometry: ThemeBackgroundGeometry;
+  motion: ThemeBackgroundMotion;
+};
+
+type ThemeCore = {
   label: string;
   nameZh: string;
   descriptionZh: string;
@@ -68,11 +99,82 @@ export type Theme = {
   layoutPreset: LayoutPreset;
 };
 
+export type Theme = ThemeCore & {
+  id: ThemeId;
+  backgroundLayers: ResolvedThemeBackground;
+};
+
+type ThemeRegistryEntry = ThemeCore & {
+  backgroundLayers?: ThemeBackground;
+};
+
 export const DEFAULT_THEME_ID: ThemeId = 'warm-keynote';
 
 const sans = '"Microsoft YaHei", "PingFang SC", Arial, sans-serif';
 const serif = '"Noto Serif SC", "Songti SC", "SimSun", serif';
 const mono = 'Consolas, "Cascadia Mono", monospace';
+
+const defaultGlow: ThemeBackgroundGlow = {
+  intensity: 0.22,
+  scale: 1,
+  speed: 0.12,
+};
+
+const defaultTextureForPattern = (pattern: ThemePattern): ThemeBackgroundTexture => {
+  if (pattern === 'blueprint' || pattern === 'grid') {
+    return 'grid';
+  }
+
+  if (pattern === 'paper' || pattern === 'zine') {
+    return 'paper';
+  }
+
+  if (pattern === 'terminal') {
+    return 'scanline';
+  }
+
+  if (pattern === 'dots' || pattern === 'botanical') {
+    return 'dots';
+  }
+
+  if (pattern === 'stripes') {
+    return 'grain';
+  }
+
+  return 'none';
+};
+
+const defaultGeometryForPattern = (pattern: ThemePattern): ThemeBackgroundGeometry => {
+  if (pattern === 'blueprint') {
+    return 'blueprint';
+  }
+
+  if (pattern === 'zine') {
+    return 'zine';
+  }
+
+  if (pattern === 'terminal') {
+    return 'rings';
+  }
+
+  return 'none';
+};
+
+export const resolveThemeBackground = (theme: ThemeCore & {backgroundLayers?: ThemeBackground}): ResolvedThemeBackground => {
+  const layers = theme.backgroundLayers ?? {};
+
+  return {
+    base: layers.base ?? theme.background,
+    vignette: layers.vignette ?? theme.vignette,
+    texture: layers.texture ?? defaultTextureForPattern(theme.pattern),
+    glow: {
+      ...defaultGlow,
+      ...(layers.glow ?? {}),
+    },
+    geometry: layers.geometry ?? defaultGeometryForPattern(theme.pattern),
+    motion: layers.motion ?? 'subtle',
+  };
+};
 
 const gardenThemeRegistry = {
   'midnight-press': {
@@ -99,6 +201,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 20% 0%, rgba(224,179,90,0.16), transparent 32%)',
     headingTransform: 'none',
     layoutPreset: 'editorial-split',
+    backgroundLayers: {
+      texture: 'grain',
+      geometry: 'zine',
+      motion: 'cinematic',
+      glow: {intensity: 0.26, scale: 1.06, speed: 0.09},
+    },
   },
   'warm-keynote': {
     label: 'Warm Keynote',
@@ -124,6 +232,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 84% 22%, rgba(204,95,63,0.18), transparent 34%)',
     headingTransform: 'none',
     layoutPreset: 'clean-card',
+    backgroundLayers: {
+      texture: 'paper',
+      geometry: 'blocks',
+      motion: 'subtle',
+      glow: {intensity: 0.34, scale: 1.04, speed: 0.1},
+    },
   },
   newsroom: {
     label: 'Newsroom',
@@ -149,6 +263,12 @@ const gardenThemeRegistry = {
     vignette: 'linear-gradient(90deg, rgba(198,0,33,0.08), transparent 38%)',
     headingTransform: 'none',
     layoutPreset: 'editorial-split',
+    backgroundLayers: {
+      texture: 'grain',
+      geometry: 'blocks',
+      motion: 'subtle',
+      glow: {intensity: 0.18, scale: 0.96, speed: 0.06},
+    },
   },
   'bauhaus-bold': {
     label: 'Bauhaus Bold',
@@ -174,6 +294,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 88% 18%, rgba(16,99,181,0.18), transparent 30%)',
     headingTransform: 'uppercase',
     layoutPreset: 'editorial-split',
+    backgroundLayers: {
+      texture: 'dots',
+      geometry: 'blocks',
+      motion: 'energetic',
+      glow: {intensity: 0.36, scale: 1.08, speed: 0.2},
+    },
   },
   'paper-press': {
     label: 'Paper Press',
@@ -199,6 +325,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 78% 30%, rgba(157,63,47,0.13), transparent 34%)',
     headingTransform: 'none',
     layoutPreset: 'clean-card',
+    backgroundLayers: {
+      texture: 'paper',
+      geometry: 'zine',
+      motion: 'subtle',
+      glow: {intensity: 0.2, scale: 0.92, speed: 0.07},
+    },
   },
   blueprint: {
     label: 'Blueprint',
@@ -224,6 +356,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 18% 12%, rgba(118,215,255,0.20), transparent 30%)',
     headingTransform: 'none',
     layoutPreset: 'terminal-code',
+    backgroundLayers: {
+      texture: 'grid',
+      geometry: 'blueprint',
+      motion: 'subtle',
+      glow: {intensity: 0.3, scale: 0.98, speed: 0.08},
+    },
   },
   'bold-signal': {
     label: 'Bold Signal',
@@ -249,6 +387,12 @@ const gardenThemeRegistry = {
     vignette: 'linear-gradient(135deg, rgba(255,59,48,0.18), transparent 40%)',
     headingTransform: 'uppercase',
     layoutPreset: 'editorial-split',
+    backgroundLayers: {
+      texture: 'grain',
+      geometry: 'blocks',
+      motion: 'cinematic',
+      glow: {intensity: 0.38, scale: 1.04, speed: 0.16},
+    },
   },
   'chalk-garden': {
     label: 'Chalk Garden',
@@ -274,6 +418,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 78% 16%, rgba(217,227,107,0.16), transparent 34%)',
     headingTransform: 'none',
     layoutPreset: 'clean-card',
+    backgroundLayers: {
+      texture: 'dots',
+      geometry: 'waves',
+      motion: 'subtle',
+      glow: {intensity: 0.24, scale: 0.98, speed: 0.08},
+    },
   },
   'creative-voltage': {
     label: 'Creative Voltage',
@@ -299,6 +449,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 85% 18%, rgba(255,79,216,0.24), transparent 32%)',
     headingTransform: 'none',
     layoutPreset: 'editorial-split',
+    backgroundLayers: {
+      texture: 'dots',
+      geometry: 'waves',
+      motion: 'energetic',
+      glow: {intensity: 0.46, scale: 1.16, speed: 0.24},
+    },
   },
   'dark-botanical': {
     label: 'Dark Botanical',
@@ -324,6 +480,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 82% 20%, rgba(133,208,111,0.18), transparent 34%)',
     headingTransform: 'none',
     layoutPreset: 'clean-card',
+    backgroundLayers: {
+      texture: 'dots',
+      geometry: 'waves',
+      motion: 'subtle',
+      glow: {intensity: 0.28, scale: 1.02, speed: 0.09},
+    },
   },
   dune: {
     label: 'Dune',
@@ -349,6 +511,12 @@ const gardenThemeRegistry = {
     vignette: 'linear-gradient(135deg, rgba(182,95,42,0.14), transparent 44%)',
     headingTransform: 'none',
     layoutPreset: 'clean-card',
+    backgroundLayers: {
+      texture: 'paper',
+      geometry: 'waves',
+      motion: 'subtle',
+      glow: {intensity: 0.22, scale: 1.08, speed: 0.06},
+    },
   },
   'electric-studio': {
     label: 'Electric Studio',
@@ -374,6 +542,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 18% 12%, rgba(110,255,127,0.16), transparent 30%)',
     headingTransform: 'none',
     layoutPreset: 'terminal-code',
+    backgroundLayers: {
+      texture: 'grid',
+      geometry: 'rings',
+      motion: 'cinematic',
+      glow: {intensity: 0.34, scale: 1.04, speed: 0.16},
+    },
   },
   'forest-ink': {
     label: 'Forest Ink',
@@ -399,6 +573,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 80% 24%, rgba(47,124,85,0.12), transparent 34%)',
     headingTransform: 'none',
     layoutPreset: 'clean-card',
+    backgroundLayers: {
+      texture: 'paper',
+      geometry: 'waves',
+      motion: 'subtle',
+      glow: {intensity: 0.18, scale: 0.94, speed: 0.06},
+    },
   },
   'indigo-porcelain': {
     label: 'Indigo Porcelain',
@@ -424,6 +604,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 84% 18%, rgba(46,82,201,0.14), transparent 32%)',
     headingTransform: 'none',
     layoutPreset: 'clean-card',
+    backgroundLayers: {
+      texture: 'dots',
+      geometry: 'rings',
+      motion: 'subtle',
+      glow: {intensity: 0.24, scale: 1, speed: 0.08},
+    },
   },
   'kraft-paper': {
     label: 'Kraft Paper',
@@ -449,6 +635,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 82% 24%, rgba(141,61,47,0.16), transparent 34%)',
     headingTransform: 'none',
     layoutPreset: 'editorial-split',
+    backgroundLayers: {
+      texture: 'paper',
+      geometry: 'zine',
+      motion: 'subtle',
+      glow: {intensity: 0.24, scale: 0.96, speed: 0.07},
+    },
   },
   'monochrome-print': {
     label: 'Monochrome Print',
@@ -474,6 +666,12 @@ const gardenThemeRegistry = {
     vignette: 'linear-gradient(90deg, rgba(0,0,0,0.06), transparent 40%)',
     headingTransform: 'none',
     layoutPreset: 'editorial-split',
+    backgroundLayers: {
+      texture: 'grain',
+      geometry: 'blocks',
+      motion: 'none',
+      glow: {intensity: 0.08, scale: 0.88, speed: 0},
+    },
   },
   'neon-cyber': {
     label: 'Neon Cyber',
@@ -499,6 +697,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 82% 18%, rgba(255,43,214,0.24), transparent 32%)',
     headingTransform: 'none',
     layoutPreset: 'terminal-code',
+    backgroundLayers: {
+      texture: 'scanline',
+      geometry: 'rings',
+      motion: 'cinematic',
+      glow: {intensity: 0.42, scale: 1.08, speed: 0.18},
+    },
   },
   'pastel-dream': {
     label: 'Pastel Dream',
@@ -524,6 +728,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 82% 18%, rgba(211,95,174,0.16), transparent 34%)',
     headingTransform: 'none',
     layoutPreset: 'clean-card',
+    backgroundLayers: {
+      texture: 'dots',
+      geometry: 'blocks',
+      motion: 'subtle',
+      glow: {intensity: 0.3, scale: 1.1, speed: 0.09},
+    },
   },
   'split-canvas': {
     label: 'Split Canvas',
@@ -549,6 +759,12 @@ const gardenThemeRegistry = {
     vignette: 'linear-gradient(90deg, transparent 0 58%, rgba(36,107,254,0.12) 58% 100%)',
     headingTransform: 'none',
     layoutPreset: 'editorial-split',
+    backgroundLayers: {
+      texture: 'grain',
+      geometry: 'blocks',
+      motion: 'cinematic',
+      glow: {intensity: 0.28, scale: 1.02, speed: 0.13},
+    },
   },
   'sunset-zine': {
     label: 'Sunset Zine',
@@ -574,6 +790,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 82% 20%, rgba(255,92,57,0.20), transparent 34%)',
     headingTransform: 'none',
     layoutPreset: 'editorial-split',
+    backgroundLayers: {
+      texture: 'paper',
+      geometry: 'zine',
+      motion: 'energetic',
+      glow: {intensity: 0.36, scale: 1.08, speed: 0.18},
+    },
   },
   'swiss-ikb': {
     label: 'Swiss IKB',
@@ -599,6 +821,12 @@ const gardenThemeRegistry = {
     vignette: 'linear-gradient(90deg, rgba(0,71,255,0.10), transparent 38%)',
     headingTransform: 'none',
     layoutPreset: 'clean-card',
+    backgroundLayers: {
+      texture: 'grid',
+      geometry: 'blocks',
+      motion: 'subtle',
+      glow: {intensity: 0.22, scale: 0.98, speed: 0.07},
+    },
   },
   'terminal-green': {
     label: 'Terminal Green',
@@ -624,6 +852,12 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 18% 10%, rgba(57,255,136,0.16), transparent 30%)',
     headingTransform: 'none',
     layoutPreset: 'terminal-code',
+    backgroundLayers: {
+      texture: 'scanline',
+      geometry: 'rings',
+      motion: 'cinematic',
+      glow: {intensity: 0.34, scale: 1.02, speed: 0.14},
+    },
   },
   'vintage-editorial': {
     label: 'Vintage Editorial',
@@ -649,13 +883,24 @@ const gardenThemeRegistry = {
     vignette: 'radial-gradient(circle at 82% 18%, rgba(154,51,36,0.14), transparent 34%)',
     headingTransform: 'none',
     layoutPreset: 'editorial-split',
+    backgroundLayers: {
+      texture: 'paper',
+      geometry: 'zine',
+      motion: 'subtle',
+      glow: {intensity: 0.2, scale: 0.94, speed: 0.06},
+    },
   },
-} satisfies Record<ThemeId, Omit<Theme, 'id'>>;
+} satisfies Record<ThemeId, ThemeRegistryEntry>;
 
-export const themes = GARDEN_THEME_IDS.map((id) => ({
-  id,
-  ...gardenThemeRegistry[id],
-})) satisfies readonly Theme[];
+export const themes = GARDEN_THEME_IDS.map((id) => {
+  const theme = gardenThemeRegistry[id];
+
+  return {
+    id,
+    ...theme,
+    backgroundLayers: resolveThemeBackground(theme),
+  };
+}) satisfies readonly Theme[];
 
 export const THEME_IDS = GARDEN_THEME_IDS;
 

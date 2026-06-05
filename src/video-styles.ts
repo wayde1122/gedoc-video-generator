@@ -183,7 +183,7 @@ export const createVideoStyles = (theme: Theme): Record<string, React.CSSPropert
 
   return {
     root: {
-      background: `${theme.vignette}, ${theme.background}`,
+      background: `${theme.backgroundLayers.vignette}, ${theme.backgroundLayers.base}`,
       color: theme.text,
       fontFamily: theme.fontFamily,
       overflow: 'hidden',
