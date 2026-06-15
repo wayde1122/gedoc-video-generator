@@ -1,8 +1,9 @@
 import React from 'react';
 import {AbsoluteFill, useCurrentFrame, useVideoConfig} from 'remotion';
 import {videoCourse} from './course-data';
+import {ThemeOverlay} from './ThemeOverlay';
 import {VideoBackground} from './VideoBackground';
-import {DocumentSlideView, SegmentedAudio, SlideView} from './VideoSlideViews';
+import {DocumentSlideView, NewsroomSlideView, SegmentedAudio, SlideView} from './VideoSlideViews';
 import {createVideoStyles} from './video-styles';
 import {getActiveSlide, isDocumentSlide} from './video-utils';
 import {resolveTheme} from './themes';
@@ -22,6 +23,7 @@ if (hasSegmentedAudio) {
 }
 
 const styles = createVideoStyles(theme);
+const isNewsroomTheme = theme.signature === 'newsroom';
 
 export const CourseVideo = () => {
   const frame = useCurrentFrame();
@@ -44,11 +46,26 @@ export const CourseVideo = () => {
             patternStyle={styles.backgroundPattern}
             accentStyle={styles.backgroundAccent}
           />
+          {styles.themeFrameA ? <div style={styles.themeFrameA} /> : null}
+          {styles.themeFrameB ? <div style={styles.themeFrameB} /> : null}
+          {styles.themeFrameC ? <div style={styles.themeFrameC} /> : null}
+          <ThemeOverlay theme={theme} />
+          {isNewsroomTheme ? <div style={styles.newsroomStageFrame} /> : null}
           <div style={styles.topBar}>
             <div style={styles.courseName}>{videoCourse.title}</div>
           </div>
-          <SlideView key={activeSlide.start} slide={activeSlide} theme={theme} styles={styles} />
-          {activeSlide.caption ? <div style={styles.caption}>{activeSlide.caption}</div> : null}
+          {isNewsroomTheme ? (
+            <NewsroomSlideView key={activeSlide.start} slide={activeSlide} theme={theme} styles={styles} />
+          ) : (
+            <SlideView key={activeSlide.start} slide={activeSlide} theme={theme} styles={styles} />
+          )}
+          {!isNewsroomTheme && activeSlide.caption ? (
+            <div style={styles.captionWrap ?? styles.caption}>
+              <span style={styles.captionLabel}>Narration</span>
+              <span style={styles.captionRule} />
+              <span style={styles.captionText}>{activeSlide.caption}</span>
+            </div>
+          ) : null}
         </>
       )}
       <div style={styles.progressTrack}>

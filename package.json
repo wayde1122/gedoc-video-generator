@@ -13,6 +13,7 @@
     "demo:voice": "pnpm run course && pnpm run voice -- --force && pnpm run render",
     "demo:current": "pnpm run render",
     "demo:current:voice": "pnpm run voice && pnpm run render",
+    "preview:themes": "tsx scripts/render-theme-previews.ts",
     "studio": "remotion studio src/index.tsx",
     "env:check": "tsx scripts/check-env.ts",
     "typecheck": "tsc --noEmit",

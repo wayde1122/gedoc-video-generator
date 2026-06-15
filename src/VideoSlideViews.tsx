@@ -2,6 +2,7 @@ import React from 'react';
 import {AbsoluteFill, Audio, Img, interpolate, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import type {Slide} from './course-schema';
 import type {Theme} from './themes';
+export {NewsroomSlideView} from './newsroom-primitives';
 import {
   getAudioSrc,
   getBackgroundImage,
@@ -50,7 +51,8 @@ export const BulletList = ({bullets, frame, styles}: {bullets: string[]; frame: 
               transform: `translateY(${translateY}px)`,
             }}
           >
-            <span style={styles.bulletDot} />
+            <span style={styles.bulletIndex}>{String(index + 1).padStart(2, '0')}</span>
+            <span style={styles.bulletRule} />
             <span>{bullet}</span>
           </div>
         );
@@ -72,7 +74,10 @@ export const SlideView = ({slide, theme, styles}: {slide: Slide; theme: Theme; s
 
   return (
     <div style={{...styles.slide, transform: `translateY(${y}px)`, opacity: entrance}}>
-      <div style={styles.kicker}>{theme.label.toUpperCase()}</div>
+      <div style={styles.kicker}>
+        <span>{theme.label.toUpperCase()}</span>
+        <span style={styles.kickerRule} />
+      </div>
       <h1
         style={{
           ...(slide.kind === 'title' ? styles.title : styles.heading),

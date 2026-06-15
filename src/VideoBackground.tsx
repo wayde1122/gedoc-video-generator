@@ -31,6 +31,10 @@ const hexToRgb = (hex: string): {r: number; g: number; b: number} | null => {
 };
 
 const alpha = (color: string, opacity: number): string => {
+  if (/^rgba?\(/i.test(color.trim())) {
+    return color;
+  }
+
   const rgb = hexToRgb(color);
   if (!rgb) {
     return color;
@@ -57,6 +61,7 @@ const getMotionMultiplier = (motion: Theme['backgroundLayers']['motion']) => {
 
 const getTextureStyle = (theme: Theme, drift: number): React.CSSProperties => {
   const texture = theme.backgroundLayers.texture;
+  const isNewsroom = theme.signature === 'newsroom';
   const color = alpha(theme.line, 0.48);
   const softColor = alpha(theme.line, 0.26);
 
@@ -73,10 +78,12 @@ const getTextureStyle = (theme: Theme, drift: number): React.CSSProperties => {
   if (texture === 'grain') {
     return {
       ...layerBase,
-      backgroundImage: `radial-gradient(${alpha(theme.text, 0.18)} 0.8px, transparent 1px), radial-gradient(${softColor} 0.6px, transparent 1px)`,
-      backgroundSize: '17px 17px, 29px 29px',
+      backgroundImage: isNewsroom
+        ? `radial-gradient(${alpha(theme.text, 0.12)} 0.45px, transparent 0.9px), radial-gradient(${alpha(theme.line, 0.20)} 0.55px, transparent 1px)`
+        : `radial-gradient(${alpha(theme.text, 0.18)} 0.8px, transparent 1px), radial-gradient(${softColor} 0.6px, transparent 1px)`,
+      backgroundSize: isNewsroom ? '21px 21px, 37px 37px' : '17px 17px, 29px 29px',
       backgroundPosition: `${drift * 0.4}px ${-drift * 0.3}px, ${-drift * 0.2}px ${drift * 0.34}px`,
-      opacity: 0.22,
+      opacity: isNewsroom ? 0.13 : 0.22,
     };
   }
 
@@ -114,7 +121,11 @@ const getTextureStyle = (theme: Theme, drift: number): React.CSSProperties => {
 
 const getGlowStyle = (theme: Theme, time: number, drift: number): React.CSSProperties => {
   const glow = theme.backgroundLayers.glow;
-  const intensity = glow.intensity;
+  const terminal = theme.styleFamily === 'terminal';
+  const quietMinimal = ['apple-hig', 'muji-kenya-hara'].includes(theme.recipe);
+  const flat = ['brutalist', 'poster', 'swiss', 'minimal', 'retro', 'editorial'].includes(theme.styleFamily);
+  const flatFactor = quietMinimal ? 0.18 : 0.45;
+  const intensity = terminal || flat ? glow.intensity * flatFactor : glow.intensity;
   const scale = glow.scale;
   const x1 = 18 + Math.sin(time * 0.7) * 6;
   const y1 = 16 + Math.cos(time * 0.55) * 5;
@@ -126,11 +137,11 @@ const getGlowStyle = (theme: Theme, time: number, drift: number): React.CSSPrope
   return {
     ...layerBase,
     backgroundImage: [
-      `radial-gradient(circle at ${x1}% ${y1}%, ${alpha(theme.accent, intensity)}, transparent ${Math.round(24 * scale)}%)`,
-      `radial-gradient(circle at ${x2}% ${y2}%, ${alpha(theme.accent2, intensity * 0.82)}, transparent ${Math.round(28 * scale)}%)`,
-      `radial-gradient(circle at ${x3}% ${y3}%, ${alpha(theme.panel, intensity * 0.45)}, transparent ${Math.round(34 * scale)}%)`,
+      `radial-gradient(circle at ${x1}% ${y1}%, ${alpha(theme.accent, intensity)}, transparent ${Math.round((flat ? 18 : 24) * scale)}%)`,
+      `radial-gradient(circle at ${x2}% ${y2}%, ${alpha(theme.accent2, intensity * 0.82)}, transparent ${Math.round((flat ? 20 : 28) * scale)}%)`,
+      `radial-gradient(circle at ${x3}% ${y3}%, ${alpha(theme.panel, intensity * 0.45)}, transparent ${Math.round((flat ? 24 : 34) * scale)}%)`,
     ].join(', '),
-    opacity: 0.95,
+    opacity: terminal ? 0.45 : quietMinimal ? 0.34 : flat ? 0.62 : 0.95,
     transform: `translate3d(${Math.sin(time) * 18}px, ${Math.cos(time * 0.8) * 14}px, 0) scale(${1 + Math.sin(time * 0.33) * 0.018})`,
     backgroundPosition: `${drift * 0.1}px ${drift * 0.06}px`,
   };
@@ -138,22 +149,35 @@ const getGlowStyle = (theme: Theme, time: number, drift: number): React.CSSPrope
 
 const getGeometryStyle = (theme: Theme, drift: number, time: number): React.CSSProperties => {
   const geometry = theme.backgroundLayers.geometry;
+  const quietMinimal = ['apple-hig', 'muji-kenya-hara'].includes(theme.recipe);
+
+  if (quietMinimal) {
+    return {...layerBase, opacity: 0};
+  }
 
   if (geometry === 'blocks') {
+    // Softened: a faint diagonal light leak + a soft accent halo instead of
+    // the old hard wedges. The wedges fought with the slide card on most
+    // themes, especially editorial-split.
     return {
       ...layerBase,
-      backgroundImage: `linear-gradient(115deg, transparent 0 56%, ${alpha(theme.accent, 0.1)} 56% 70%, transparent 70%), linear-gradient(18deg, transparent 0 72%, ${alpha(theme.accent2, 0.1)} 72% 82%, transparent 82%)`,
-      transform: `translateX(${Math.sin(time * 0.4) * 18}px)`,
-      opacity: 0.9,
+      backgroundImage: [
+        `linear-gradient(120deg, transparent 0 50%, ${alpha(theme.accent, theme.styleFamily === 'brutalist' ? 0.32 : 0.05)} 50% 100%)`,
+        `radial-gradient(circle at 88% 22%, ${alpha(theme.accent2, 0.07)} 0 30%, transparent 62%)`,
+      ].join(', '),
+      transform: `translateX(${Math.sin(time * 0.4) * 8}px)`,
+      opacity: theme.styleFamily === 'brutalist' ? 0.95 : 0.7,
     };
   }
 
   if (geometry === 'rings') {
     return {
       ...layerBase,
-      backgroundImage: `radial-gradient(circle at 82% 24%, transparent 0 17%, ${alpha(theme.accent, 0.2)} 17.3% 17.8%, transparent 18.1% 28%, ${alpha(theme.accent2, 0.14)} 28.2% 28.6%, transparent 29%)`,
+      backgroundImage: theme.styleFamily === 'terminal'
+        ? `repeating-linear-gradient(90deg, transparent 0 72px, ${alpha(theme.line, 0.62)} 72px 73px), repeating-linear-gradient(0deg, transparent 0 28px, ${alpha(theme.line, 0.52)} 28px 29px)`
+        : `radial-gradient(circle at 82% 24%, transparent 0 17%, ${alpha(theme.accent, 0.2)} 17.3% 17.8%, transparent 18.1% 28%, ${alpha(theme.accent2, 0.14)} 28.2% 28.6%, transparent 29%)`,
       transform: `translate3d(${Math.sin(time * 0.5) * 10}px, ${Math.cos(time * 0.5) * 10}px, 0) rotate(${Math.sin(time * 0.25) * 2}deg)`,
-      opacity: 0.72,
+      opacity: theme.styleFamily === 'terminal' ? 0.42 : 0.72,
     };
   }
 
@@ -182,6 +206,26 @@ const getGeometryStyle = (theme: Theme, drift: number, time: number): React.CSSP
       backgroundImage: `repeating-linear-gradient(112deg, transparent 0 22px, ${alpha(theme.accent, 0.08)} 22px 24px, transparent 24px 58px)`,
       backgroundPosition: `${drift * 0.22}px ${drift * 0.12}px`,
       opacity: 0.46,
+    };
+  }
+
+  if (geometry === 'editorial-rules') {
+    const ruleAlpha = theme.signature === 'newsroom' ? 0.28 : 0.5;
+    const horizontalAlpha = theme.signature === 'newsroom' ? 0.3 : 0.55;
+    const secondaryAlpha = theme.signature === 'newsroom' ? 0.24 : 0.45;
+
+    // Two faint column rules at 1/3 and 2/3, plus a hairline rule under the
+    // masthead area. Reads as newspaper columns without competing with the
+    // slide card. Used by newsroom; safe to enable on other editorial
+    // themes later if they want a similar feel.
+    return {
+      ...layerBase,
+      backgroundImage: [
+        `linear-gradient(90deg, transparent 0 calc(33.33% - 1px), ${alpha(theme.line, ruleAlpha)} calc(33.33% - 1px) 33.33%, transparent 33.33% calc(66.66% - 1px), ${alpha(theme.line, ruleAlpha)} calc(66.66% - 1px) 66.66%, transparent 66.66%)`,
+        `linear-gradient(0deg, transparent 0 18%, ${alpha(theme.line, horizontalAlpha)} 18% calc(18% + 1px), transparent calc(18% + 2px) 28%, ${alpha(theme.line, secondaryAlpha)} 28% calc(28% + 1px), transparent calc(28% + 2px))`,
+      ].join(', '),
+      backgroundPosition: `${drift * 0.05}px 0, 0 ${drift * 0.04}px`,
+      opacity: theme.signature === 'newsroom' ? 0.34 : 0.55,
     };
   }
 

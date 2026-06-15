@@ -11,7 +11,9 @@ import {
   DEFAULT_THEME_ID,
   GARDEN_THEME_IDS,
   isThemeId,
+  recipeAnchors,
   resolveTheme,
+  themeStyleFamilies,
   themes,
 } from '../src/themes';
 
@@ -138,8 +140,10 @@ check('course schema accepts every garden id and rejects an unknown id', () => {
 
 check('theme registry resolves lightweight background layers for every theme', () => {
   const validTextures = new Set(['none', 'paper', 'grain', 'scanline', 'grid', 'dots']);
-  const validGeometries = new Set(['none', 'blocks', 'rings', 'waves', 'blueprint', 'zine']);
+  const validGeometries = new Set(['none', 'blocks', 'rings', 'waves', 'blueprint', 'zine', 'editorial-rules']);
   const validMotions = new Set(['none', 'subtle', 'cinematic', 'energetic']);
+  const validRecipes = new Set(recipeAnchors);
+  const validStyleFamilies = new Set(themeStyleFamilies);
   const explicitBackgroundThemeIds = [
     'midnight-press',
     'warm-keynote',
@@ -167,6 +171,8 @@ check('theme registry resolves lightweight background layers for every theme', (
   ] as const;
 
   for (const theme of themes) {
+    assert.ok(validRecipes.has(theme.recipe), `${theme.id} should map to a garden web-design recipe`);
+    assert.ok(validStyleFamilies.has(theme.styleFamily), `${theme.id} should map to a style family`);
     assert.equal(theme.backgroundLayers.base, theme.background);
     assert.equal(theme.backgroundLayers.vignette, theme.vignette);
     assert.ok(validTextures.has(theme.backgroundLayers.texture), `${theme.id} should resolve a valid texture`);
@@ -183,6 +189,7 @@ check('theme registry resolves lightweight background layers for every theme', (
     expectedGardenThemeIds,
   );
   assert.equal(themeById.get('warm-keynote')?.backgroundLayers.geometry, 'blocks');
+  assert.equal(themeById.get('newsroom')?.backgroundLayers.geometry, 'editorial-rules');
   assert.equal(themeById.get('blueprint')?.backgroundLayers.texture, 'grid');
   assert.equal(themeById.get('neon-cyber')?.backgroundLayers.motion, 'cinematic');
   assert.equal(themeById.get('creative-voltage')?.backgroundLayers.motion, 'energetic');
